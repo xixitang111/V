@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { spawn } from 'child_process';
-import path from 'path';
+import { addToQueue } from '../../../lib/queue';
 
 export async function POST(request: Request) {
   try {
@@ -13,46 +12,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const scriptPath = path.join(
-      process.cwd(),
-      'scripts',
-      'publish_long_text.js'
-    );
-
-    console.log('🚀 启动自动化发布脚本...');
+    console.log('📥 将内容加入待发布队列...');
     console.log('📄 标题:', title);
     console.log('📄 内容长度:', content.length, '字符');
 
-    const child = spawn('node', [scriptPath, title, content], {
-      cwd: process.cwd(),
-      stdio: 'inherit'
+    const queueItem = addToQueue(title, content);
+
+    return NextResponse.json({
+      success: true,
+      message: '已加入待发布队列！',
+      queueItem
     });
-
-    const result = await new Promise<{ success: boolean; error?: string }>((resolve) => {
-      child.on('close', (code) => {
-        if (code === 0) {
-          resolve({ success: true });
-        } else {
-          resolve({ success: false, error: `脚本执行失败，退出码: ${code}` });
-        }
-      });
-
-      child.on('error', (error) => {
-        resolve({ success: false, error: error.message });
-      });
-    });
-
-    if (result.success) {
-      return NextResponse.json({
-        success: true,
-        message: '已成功存入小红书长文草稿箱！'
-      });
-    } else {
-      return NextResponse.json(
-        { error: result.error || '发布失败' },
-        { status: 500 }
-      );
-    }
   } catch (error) {
     console.error('发布 API 错误:', error);
     return NextResponse.json(

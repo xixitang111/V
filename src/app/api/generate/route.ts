@@ -2,144 +2,127 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { persona, outline, model } = await request.json();
+    const { persona, outline, model, history = '' } = await request.json();
 
     if (!persona || !outline || !model) {
       return NextResponse.json(
-        { error: 'Missing required fields: persona, outline, and model' },
+        { error: '缺少必填字段：persona, outline, model' },
         { status: 400 }
       );
     }
 
-    console.log('Received request:', { persona, outline, model });
-
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
+    const apiKey = process.env.DOUBAO_API_KEY;
+    const baseUrl = process.env.DOUBAO_BASE_URL;
+    
+    if (!apiKey || !baseUrl) {
       return NextResponse.json(
-        { error: 'API key not configured' },
+        { error: '请在 .env.local 中配置 DOUBAO_API_KEY 和 DOUBAO_BASE_URL' },
         { status: 500 }
       );
     }
 
-    // 获取API基础URL
-    const baseUrl = process.env.OPENAI_BASE_URL;
+    const systemPrompt = `你现在是我的专属自媒体爆款写手与商业分析智囊。你的核心任务是：以我提供的【最新创作 Idea：${outline}】为导向，参考当前的【人设特征：${persona}】以及【历史过往内容参考：${history}】（如无则忽略），为我生成一篇极具深度的、可以直接发布的小红书长文。
+
+### 必须严格遵守的四大创作军规：
+1. **人设高度统一**：严格贴合传入的人设身份、语言风格和专属标签。保持账号极强的辨识度，杜绝任何与人设相悖的表述。
+2. **风格延续但绝对避雷同**：主动创新！观点角度、案例选取必须与历史内容不同，不做重复创作，给老粉新鲜感。
+3. **深度下钻与情绪嘴替**：
+   - 开头必须抓人：用痛点、悬念或反直觉/反常识的结论打破读者防御。
+   - 内容必须硬核：多用具体、甚至有些酷炫的行业案例和降维分析，提供极强的 Insights 和 Takeaways。
+   - 情绪必须到位：做目标受众的"嘴替"，激发评论区的分享欲和讨论欲。
+   - 态度必须去油：**绝对不要有"爹味"和高高在上的说教感**，保持平视沟通。
+4. **小红书原生语感与排版**：
+   - 减少双引号的死板引用，多用长短句交错，营造极强的"活人真实感"。
+   - 结构必须清晰分段，合理使用且不滥用 Emoji 作为视觉停顿提示。
+
+### 输出格式约束：
+你必须返回一个合法的 JSON 对象，不要包含任何额外的 Markdown 标记（如 \`\`\`json），必须包含以下两个字段：
+- \`article_content\`: 长文正文内容（包含内部的小标题、带有合理换行符 \\n 和 Emoji 的正文，用于直接复制进小红书长文编辑器排版）。
+- \`post_description\`: 小红书笔记外发文案（包含：1. 极具吸引力的主标题；2. 一段"说人话"的精简摘要/导语；3. 紧跟在底部的几个精准热点话题 #Tags）。`;
     
-    // 检查是否配置了自定义API基础URL
-    if (!baseUrl) {
-      return NextResponse.json(
-        { error: '请在.env.local中配置OPENAI_BASE_URL，使用与您的API key匹配的服务提供商地址' },
-        { status: 400 }
-      );
+    console.log('调用豆包 API...');
+    console.log('模型:', model);
+    console.log('人设:', persona);
+    console.log('创作思路:', outline);
+    
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: outline }
+        ],
+        temperature: 0.8,
+        max_tokens: 3000
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API 错误:', response.status, errorText);
+      throw new Error(`API 请求失败: ${response.status} - ${errorText}`);
     }
 
-    const systemPrompt = `你是一个深谙小红书流量密码的商业IP操盘手和爆款写手。你的任务是根据用户提供的【人设信息】和【内容大纲】，写出一篇极具'活人感'、能引发共鸣并引导私信/评论的小红书长文。
-必须严格遵守以下排版与格式要求：
-1. 标题：必须是'吸睛情绪主标题 + 垂直领域副标题'，含有痛点词，限制在20字以内。
-2. 开篇：拒绝废话，直接用一个反常识的结论或真实的经历打破防御。
-3. 正文：多用短句，多用空行。核心干货部分用 1. 2. 3. 列出，但要像聊天一样自然。
-4. Emoji 含量：每段1-2个恰到好处的 Emoji，绝对不要滥用。
-5. 结尾钩子：必须在文末留一个互动钩子，引导用户在评论区留言特定词汇，或者暗示私信可以获取独家资料。`;
-
-    // 构建请求头，兼容不同格式的 API key
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    };
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
     
-    // 根据 API key 格式自动选择认证方式
-    if (apiKey) {
-      // 检测 API key 格式并选择合适的认证方式
-      if (apiKey.startsWith('sk-')) {
-        // OpenAI 格式
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      } else if (apiKey.includes('-')) {
-        // 火山引擎等其他服务提供商格式
-        // 同时使用 Bearer 和 X-Api-Key 认证，以支持不同的认证方式
-        headers['Authorization'] = `Bearer ${apiKey}`;
-        headers['X-Api-Key'] = apiKey;
-      } else {
-        // 其他格式
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      }
+    if (!content) {
+      throw new Error('API 返回内容为空');
     }
 
-    // 构建请求体，兼容不同的 API 提供商
-    let requestBody: any = {
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `【人设信息】：${persona}\n【内容大纲】：${outline}` }
-      ],
-      temperature: 0.7,
-      max_tokens: 1000,
-      stream: false
-    };
+    console.log('大模型返回内容:', content);
 
-    // 检查是否是火山引擎API，如果是，使用正确的请求格式
-    if (baseUrl.includes('volces.com')) {
-      // 火山引擎可能需要不同的请求格式
-      // 尝试使用用户提供的模型参数
-      requestBody = {
-        ...requestBody,
-        model: model
-      };
+    // 增强的 JSON 解析逻辑
+    let jsonContent = content.trim();
+    
+    // 清理可能的 Markdown 代码块标记
+    jsonContent = jsonContent.replace(/^```json\s*/, '').replace(/```$/, '');
+    jsonContent = jsonContent.replace(/^```\s*/, '').replace(/```$/, '');
+    
+    // 尝试找到第一个 { 和最后一个 } 之间的内容
+    const firstBraceIndex = jsonContent.indexOf('{');
+    const lastBraceIndex = jsonContent.lastIndexOf('}');
+    
+    if (firstBraceIndex !== -1 && lastBraceIndex !== -1 && lastBraceIndex > firstBraceIndex) {
+      jsonContent = jsonContent.substring(firstBraceIndex, lastBraceIndex + 1);
     }
 
     try {
-      // 确保使用正确的API端点
-      let apiEndpoint = `${baseUrl}/chat/completions`;
+      const generatedData = JSON.parse(jsonContent);
       
-      // 检查是否是火山引擎API，如果是，使用正确的端点
-      if (baseUrl.includes('volces.com')) {
-        // 火山引擎的API端点
-        apiEndpoint = `${baseUrl}/chat/completions`;
-        
-        // 只使用 Authorization 头进行认证
-        headers['Authorization'] = `Bearer ${apiKey}`;
-        delete headers['X-Api-Key'];
+      // 验证必需的字段是否存在
+      if (!generatedData.article_content) {
+        console.warn('返回数据缺少 article_content 字段');
+        generatedData.article_content = content;
       }
       
-      console.log('API Endpoint:', apiEndpoint);
-      console.log('Model:', model);
-      console.log('Headers:', headers);
-      console.log('Request Body:', requestBody);
+      if (!generatedData.post_description) {
+        console.warn('返回数据缺少 post_description 字段');
+        generatedData.post_description = '请根据长文内容手动编辑外发文案';
+      }
       
-      const response = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestBody)
+      console.log('生成成功！');
+      return NextResponse.json(generatedData);
+    } catch (parseError) {
+      console.error('解析JSON失败:', parseError);
+      console.error('尝试解析的内容:', jsonContent);
+      
+      // 如果解析失败，返回原始内容作为 article_content
+      return NextResponse.json({
+        article_content: content,
+        post_description: '请根据长文内容手动编辑外发文案'
       });
-
-      console.log('Response Status:', response.status);
-      console.log('Response Headers:', response.headers);
-      
-      const responseText = await response.text();
-      console.log('Response Text:', responseText);
-      
-      if (!response.ok) {
-        try {
-          const errorData = JSON.parse(responseText);
-          const errorMessage = errorData.error?.message || errorData.error || `API request failed with status ${response.status}`;
-          throw new Error(errorMessage);
-        } catch (parseError) {
-          throw new Error(`API request failed with status ${response.status}: ${responseText}`);
-        }
-      }
-
-      const data = JSON.parse(responseText);
-      const generatedContent = data.choices?.[0]?.message?.content || '';
-
-      return NextResponse.json({ content: generatedContent });
-    } catch (error) {
-      console.error('AI generation error:', error);
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to generate content' },
-        { status: 500 }
-      );
     }
+    
   } catch (error) {
-    console.error('Request processing error:', error);
+    console.error('生成内容失败:', error);
     return NextResponse.json(
-      { error: 'Failed to process request' },
+      { error: error instanceof Error ? error.message : '生成内容失败' },
       { status: 500 }
     );
   }

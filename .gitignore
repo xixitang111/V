@@ -37,3 +37,29 @@ xhs_auth.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# presentation files
+*.html
+*.pdf
+*.md
+*.mov
+*.png
+*.jpg
+*.jpeg
+presentation/
+deploy/
+data/
+ai-ke-zeng-prototype/
+.claude/
+.claude-design/
+.openclaw/
+.opencode/
+.trae/
+debug_*.png
+debug_*.json
+image*.png
+user-*.png
+qa-*.png
+vm-*.png
+vibe-money-*.html
+xhs_auth_*.json
