@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI 客增主动推 MVP 交互原型",
-  description: "抖店 AI 客增主动推送策略交互演示原型",
+  title: "Vibe Money - 让每一个灵感都有标价",
+  description: "Vibe Money 是一款为小红书生态打造的个体商业化操作系统",
 };
 
 export default function RootLayout({
