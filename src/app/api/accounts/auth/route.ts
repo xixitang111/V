@@ -1,11 +1,22 @@
 import { NextResponse } from 'next/server';
-import { chromium } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 
 export async function POST() {
   let browser = null;
-  
+
+  // 动态 import Playwright（Vercel 等 serverless 平台不支持，graceful fallback）
+  let chromium: typeof import('playwright').chromium;
+  try {
+    const pw = await import('playwright');
+    chromium = pw.chromium;
+  } catch {
+    return NextResponse.json(
+      { error: '扫码授权需要在本地环境运行，Vercel 等云平台暂不支持此功能。请在本地运行 npm run dev 后重试。' },
+      { status: 501 }
+    );
+  }
+
   try {
     console.log('🚀 启动小红书扫码授权...');
 
@@ -43,7 +54,7 @@ export async function POST() {
           break;
         }
       } catch (e) {
-        console.log('⚠️ 检查URL时出错:', e.message);
+        console.log('⚠️ 检查URL时出错:', e instanceof Error ? e.message : String(e));
         continue;
       }
     }

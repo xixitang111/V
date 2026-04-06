@@ -16,11 +16,6 @@ export type Persona = {
   boundAccountId: string | null;
 };
 
-const ACCOUNTS_KEY = 'vibe_money_accounts';
-const PERSONAS_KEY = 'vibe_money_personas';
-const DATA_VERSION_KEY = 'vibe_money_data_version';
-const CURRENT_DATA_VERSION = '3';
-
 const defaultAccounts: Account[] = [
   {
     id: '1',
@@ -69,128 +64,188 @@ const defaultPersonas: Persona[] = [
   }
 ];
 
+// ── Supabase 超时保护 ─────────────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const withTimeout = (p: Promise<any>, ms = 5000): Promise<any> =>
+  Promise.race([p, new Promise<any>((_, rej) => setTimeout(() => rej(new Error('Supabase timeout')), ms))]);
+
+// ── 文件系统 fallback（服务端 API 路由用，浏览器无 localStorage）─────────────
+let _fsAccounts: Account[] | null = null;
+let _fsPersonas: Persona[] | null = null;
+
+function fsGetAccounts(): Account[] {
+  if (_fsAccounts !== null) return _fsAccounts;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const p = path.join(process.cwd(), 'data', 'accounts.json');
+    if (fs.existsSync(p)) {
+      _fsAccounts = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      return _fsAccounts!;
+    }
+  } catch {}
+  return defaultAccounts;
+}
+
+function fsSaveAccounts(accounts: Account[]) {
+  _fsAccounts = accounts;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const dir = path.join(process.cwd(), 'data');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'accounts.json'), JSON.stringify(accounts, null, 2));
+  } catch {}
+}
+
+function fsGetPersonas(): Persona[] {
+  if (_fsPersonas !== null) return _fsPersonas;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const p = path.join(process.cwd(), 'data', 'personas.json');
+    if (fs.existsSync(p)) {
+      _fsPersonas = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      return _fsPersonas!;
+    }
+  } catch {}
+  return defaultPersonas;
+}
+
+function fsSavePersonas(personas: Persona[]) {
+  _fsPersonas = personas;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const dir = path.join(process.cwd(), 'data');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'personas.json'), JSON.stringify(personas, null, 2));
+  } catch {}
+}
+
+// ── 浏览器侧 localStorage（客户端组件直接读，不走 API）───────────────────────
+const LS_ACCOUNTS = 'vibe_money_accounts';
+const LS_PERSONAS = 'vibe_money_personas';
+
+function lsGet<T>(key: string): T[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function lsSet<T>(key: string, value: T[]): void {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
 export const storage = {
   async getAccounts(): Promise<Account[]> {
+    // 1) Supabase
     if (isSupabaseConfigured()) {
       try {
-        const { data, error } = await supabase
-          .from('accounts')
-          .select('*')
-          .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        return data?.map((item: any) => ({
-          id: item.id,
-          nickname: item.nickname,
-          avatar: item.avatar,
-          status: item.status,
-          authFile: item.auth_file,
-          createdAt: item.created_at
-        })) || defaultAccounts;
-      } catch (error) {
-        console.error('Supabase getAccounts error:', error);
+        const { data, error } = await withTimeout(
+          supabase.from('accounts').select('*').order('created_at', { ascending: false })
+        );
+        if (!error && data && data.length > 0) {
+          return data.map((item: any) => ({
+            id: item.id,
+            nickname: item.nickname,
+            avatar: item.avatar,
+            status: item.status,
+            authFile: item.auth_file,
+            createdAt: item.created_at
+          }));
+        }
+      } catch (e) {
+        console.warn('Supabase getAccounts error:', e);
       }
     }
-    
-    if (typeof window !== 'undefined') {
-      const savedVersion = localStorage.getItem(DATA_VERSION_KEY);
-      if (savedVersion !== CURRENT_DATA_VERSION) {
-        localStorage.removeItem(ACCOUNTS_KEY);
-        localStorage.removeItem(PERSONAS_KEY);
-        localStorage.setItem(DATA_VERSION_KEY, CURRENT_DATA_VERSION);
-        return defaultAccounts;
-      }
-      const saved = localStorage.getItem(ACCOUNTS_KEY);
-      return saved ? JSON.parse(saved) : defaultAccounts;
-    }
-    return defaultAccounts;
+    // 2) browser localStorage
+    const ls = lsGet<Account>(LS_ACCOUNTS);
+    if (ls && ls.length > 0) return ls;
+    // 3) file system (server-side)
+    const fs = fsGetAccounts();
+    return fs.length > 0 ? fs : defaultAccounts;
   },
 
   async saveAccounts(accounts: Account[]): Promise<void> {
+    // browser localStorage
+    lsSet(LS_ACCOUNTS, accounts);
+    // file system (server-side)
+    fsSaveAccounts(accounts);
+    // Supabase
     if (isSupabaseConfigured()) {
       try {
         for (const account of accounts) {
-          const { error } = await supabase
-            .from('accounts')
-            .upsert({
+          await withTimeout(
+            supabase.from('accounts').upsert({
               id: account.id,
               nickname: account.nickname,
               avatar: account.avatar,
               status: account.status,
               auth_file: account.authFile,
-              created_at: account.createdAt
-            });
-          
-          if (error) throw error;
+              created_at: account.createdAt,
+            })
+          );
         }
-        return;
-      } catch (error) {
-        console.error('Supabase saveAccounts error:', error);
+      } catch (e) {
+        console.warn('Supabase saveAccounts error:', e);
       }
-    }
-    
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
     }
   },
 
   async getPersonas(): Promise<Persona[]> {
+    // 1) Supabase
     if (isSupabaseConfigured()) {
       try {
-        const { data, error } = await supabase
-          .from('personas')
-          .select('*')
-          .order('id');
-        
-        if (error) throw error;
-        return data?.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          prompt: item.prompt,
-          boundAccountId: item.bound_account_id
-        })) || defaultPersonas;
-      } catch (error) {
-        console.error('Supabase getPersonas error:', error);
+        const { data, error } = await withTimeout(
+          supabase.from('personas').select('*').order('id')
+        );
+        if (!error && data && data.length > 0) {
+          return data.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            prompt: item.prompt,
+            boundAccountId: item.bound_account_id
+          }));
+        }
+      } catch (e) {
+        console.warn('Supabase getPersonas error:', e);
       }
     }
-    
-    if (typeof window !== 'undefined') {
-      const savedVersion = localStorage.getItem(DATA_VERSION_KEY);
-      if (savedVersion !== CURRENT_DATA_VERSION) {
-        localStorage.removeItem(ACCOUNTS_KEY);
-        localStorage.removeItem(PERSONAS_KEY);
-        localStorage.setItem(DATA_VERSION_KEY, CURRENT_DATA_VERSION);
-        return defaultPersonas;
-      }
-      const saved = localStorage.getItem(PERSONAS_KEY);
-      return saved ? JSON.parse(saved) : defaultPersonas;
-    }
-    return defaultPersonas;
+    // 2) browser localStorage
+    const ls = lsGet<Persona>(LS_PERSONAS);
+    if (ls && ls.length > 0) return ls;
+    // 3) file system (server-side)
+    const fs = fsGetPersonas();
+    return fs.length > 0 ? fs : defaultPersonas;
   },
 
   async savePersonas(personas: Persona[]): Promise<void> {
+    // browser localStorage
+    lsSet(LS_PERSONAS, personas);
+    // file system (server-side)
+    fsSavePersonas(personas);
+    // Supabase
     if (isSupabaseConfigured()) {
       try {
         for (const persona of personas) {
-          const { error } = await supabase
-            .from('personas')
-            .upsert({
+          await withTimeout(
+            supabase.from('personas').upsert({
               id: persona.id,
               name: persona.name,
               prompt: persona.prompt,
-              bound_account_id: persona.boundAccountId
-            });
-          
-          if (error) throw error;
+              bound_account_id: persona.boundAccountId,
+            })
+          );
         }
-        return;
-      } catch (error) {
-        console.error('Supabase savePersonas error:', error);
+      } catch (e) {
+        console.warn('Supabase savePersonas error:', e);
       }
-    }
-    
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(PERSONAS_KEY, JSON.stringify(personas));
     }
   }
 };

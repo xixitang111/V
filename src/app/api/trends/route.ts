@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 
@@ -26,6 +25,15 @@ export async function POST(request: Request) {
     console.log('🚀 开始抓取创作话题热点，搜索词:', searchQuery);
 
     const authData = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf-8'));
+
+    // 动态 import Playwright（serverless 平台不支持）
+    let chromium: typeof import('playwright').chromium;
+    try {
+      const pw = await import('playwright');
+      chromium = pw.chromium;
+    } catch {
+      return NextResponse.json({ error: '此功能需要本地环境支持' }, { status: 501 });
+    }
 
     const browser = await chromium.launch({
       headless: false

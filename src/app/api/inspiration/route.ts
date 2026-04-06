@@ -1,214 +1,217 @@
 import { NextResponse } from 'next/server';
+import { storage } from '@/lib/storage';
 
-const fallbackNews = [
-  '再见 Openclaw，桌面端 Agent 起飞了！',
-  'Claude Code 换成了Kimi K2.5后，我再也回不去了',
-  'OpenClaw：从"19万星标"到"行业封杀"，这只"赛博龙虾"究竟触动了谁的神经？',
-  'OpenClaw 连接飞书完整指南：插件安装、配置与踩坑记录',
-  '2026最新OpenClaw(龙虾ai)安装配置API思路与推荐方案',
-  '机器人全程自主收拾客厅！390亿美元估值机器人端到端新技能，英伟达持续加注',
-  '只要1分钟！电脑装满血龙虾，现在跟下载APP似的',
-  '企业微信支持接入OpenClaw，仅需3步即可快速上手'
-];
+const BASE_URL = process.env.OPENAI_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
+// 非推理轻量模型，响应快 3-8s
+const MODEL_ID = process.env.INSPIRATION_MODEL || 'doubao-1-5-pro-32k-250115';
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
 
 export async function POST(request: Request) {
   try {
-    const { persona, sourceUrl } = await request.json();
-
+    const { persona } = await request.json();
     if (!persona) {
-      return NextResponse.json(
-        { error: '人设不能为空' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: '人设不能为空' }, { status: 400 });
     }
 
-    console.log('🚀 开始生成选题灵感，人设:', persona);
+    // 从存储中找到该人设的完整 prompt（加超时保护）
+    const personas = await Promise.race([
+      storage.getPersonas(),
+      new Promise<any[]>(r => setTimeout(() => r([]), 3000)),
+    ]).catch(() => []);
+    const personaData = personas.find((p: any) => p.name === persona);
+    const personaPrompt = personaData?.prompt || '';
 
-    let fetchedTitles: string[];
-    
-    try {
-      const response = await fetch(sourceUrl || 'https://tophub.today/c/ai', {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-        },
-        signal: AbortSignal.timeout(10000)
-      });
+    // 并行：搜索热点（有 Tavily key 才启用）+ 直接生成
+    const [hotTopics] = await Promise.all([
+      TAVILY_API_KEY ? fetchHotTopics(persona, personaPrompt) : Promise.resolve([]),
+    ]);
 
-      if (response.ok) {
-        const html = await response.text();
-        fetchedTitles = parseTitlesFromHtml(html);
-      } else {
-        throw new Error('Failed to fetch');
-      }
-    } catch (error) {
-      console.log('⚠️ 抓取失败，使用备用数据');
-      fetchedTitles = fallbackNews;
-    }
-
-    if (fetchedTitles.length === 0) {
-      fetchedTitles = fallbackNews;
-    }
-
-    console.log('📰 获取到的新闻标题:', fetchedTitles.slice(0, 5));
-
-    const inspirations = await generateInspirationsWithLLM(persona, fetchedTitles);
-
-    console.log('✅ 生成的选题灵感:', inspirations);
-
+    const inspirations = await generateInspirations(persona, personaPrompt, hotTopics);
     return NextResponse.json({ inspirations });
 
   } catch (error) {
     console.error('选题灵感 API 错误:', error);
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: '服务器内部错误' }, { status: 500 });
   }
 }
 
-function parseTitlesFromHtml(html: string): string[] {
-  const titles: string[] = [];
-  const patterns = [
-    /<h\d[^>]*>([^<]+)<\/h\d>/gi,
-    /class="[^"]*title[^"]*"[^>]*>([^<]+)</gi,
-    /<a[^>]*>([^<]{10,100})<\/a>/gi
-  ];
-
-  for (const pattern of patterns) {
-    let match;
-    while ((match = pattern.exec(html)) !== null && titles.length < 10) {
-      const title = match[1]?.trim();
-      if (title && title.length > 10 && title.length < 100) {
-        if (!titles.includes(title)) {
-          titles.push(title);
-        }
-      }
-    }
-    if (titles.length >= 10) break;
-  }
-
-  return titles;
-}
-
-async function generateInspirationsWithLLM(persona: string, titles: string[]): Promise<Array<{ topic: string; angle: string; outline: string }>> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const baseUrl = process.env.OPENAI_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-  const modelId = process.env.INSPIRATION_MODEL || process.env.AI_MODEL_NAME || 'doubao-seed-2-0-pro-260215';
-  
-  console.log('🤖 使用模型生成选题灵感:', modelId);
-
-  const systemPrompt = `你是一个千万粉丝的【${persona}】操盘手和内容主编。
-
-以下是今天 AI 圈的热点新闻标题：
-${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
-
-请从这些新闻中挑选最值得探讨的 3 个话题，不要做新闻播报，而是给出极具深度的、反常识的、或者结合普通人搞钱/职场视角的切入点。
-
-返回格式必须是一段纯 JSON 数组（不要包含 Markdown 代码块标记），每个对象包含：
-- topic: 简短的选题名称 (15字以内)
-- angle: 独特的切入观点或反共识视角 (30-50字)
-- outline: 针对这个观点，生成一个可直接执行的三段式大纲
-
-只返回 JSON，不要其他任何文字！`;
-
+/** 用 LLM 根据人设 prompt 生成 Tavily 搜索词 */
+async function generateSearchQuery(personaPrompt: string, personaName: string): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.ARK_API_KEY || '';
   try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const res = await fetch(`${BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: modelId,
+        model: MODEL_ID,
         messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: '请生成选题灵感' }
+          {
+            role: 'system',
+            content: '根据以下自媒体人设，生成一个用于搜索2026年最新市场热点资讯的中文搜索词（不超过15字，不含引号，直接返回搜索词本身，不要任何说明）。',
+          },
+          {
+            role: 'user',
+            content: `人设：${(personaPrompt || personaName).slice(0, 300)}`,
+          },
         ],
-        temperature: 0.8,
-        max_tokens: 1500
-      })
+        max_tokens: 30,
+        temperature: 0.3,
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) throw new Error('LLM failed');
+    const data = await res.json();
+    const query = data.choices?.[0]?.message?.content?.trim() || '';
+    return query || `${personaName} 2026 热点`;
+  } catch {
+    return `${personaName} 2026 最新趋势`;
+  }
+}
+
+/** 用 Tavily 搜索与人设相关的实时热点 */
+async function fetchHotTopics(persona: string, personaPrompt: string): Promise<string[]> {
+  const query = await generateSearchQuery(personaPrompt, persona);
+  console.log(`🔍 Tavily 搜索词（由人设生成）: "${query}"`);
+
+  try {
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: TAVILY_API_KEY,
+        query,
+        search_depth: 'basic',
+        max_results: 6,
+        include_answer: false,
+      }),
+      signal: AbortSignal.timeout(5000),
     });
 
-    if (!response.ok) {
-      throw new Error(`LLM API 请求失败: ${response.status}`);
-    }
+    if (!res.ok) throw new Error('Tavily failed');
+    const data = await res.json();
+    return (data.results || []).map((r: any) => r.title).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function generateInspirations(
+  personaName: string,
+  personaPrompt: string,
+  hotTopics: string[]
+): Promise<Array<{ topic: string; angle: string; outline: string }>> {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.ARK_API_KEY || '';
+  const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const hotSection = hotTopics.length > 0
+    ? `热点参考：${hotTopics.slice(0, 4).join('；')}\n`
+    : '';
+
+  const personaSection = personaPrompt
+    ? `人设：${personaPrompt.slice(0, 200)}\n`
+    : `人设名称：${personaName}\n`;
+
+  const systemPrompt = `你是小红书内容策划。${personaSection}${hotSection}今天${today}，为这个人设生成3个爆款选题，覆盖痛点型、反直觉型、干货型各一个。
+
+直接返回JSON数组，不要任何说明：
+[{"topic":"标题(≤12字)","angle":"切入角度(≤40字)","outline":"大纲第一段\\n大纲第二段\\n大纲第三段"}]`;
+
+  try {
+    const response = await fetch(`${BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: MODEL_ID,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: '生成选题灵感' },
+        ],
+        temperature: 0.85,
+        max_tokens: 500,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (!response.ok) throw new Error(`LLM API 请求失败: ${response.status}`);
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
+    const content: string = data.choices[0].message.content.trim();
 
-    let jsonStr = content.trim();
-    const jsonMatch = jsonStr.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[0];
-    }
+    const match = content.match(/\[[\s\S]*\]/);
+    if (!match) throw new Error('JSON 解析失败');
 
-    return JSON.parse(jsonStr);
+    return JSON.parse(match[0]);
   } catch (error) {
-    console.error('LLM 生成失败，使用备用灵感:', error);
-    return getFallbackInspirations(persona);
+    console.error('LLM 生成失败，使用备用数据:', error);
+    return getFallbackInspirations(personaName);
   }
 }
 
 function getFallbackInspirations(persona: string): Array<{ topic: string; angle: string; outline: string }> {
-  const inspirations = {
-    'AI观点分享博主': [
-      {
-        topic: 'OpenClaw 争议',
-        angle: '从19万星标到行业封杀，OpenClaw的争议背后是AI安全边界的博弈',
-        outline: '1. 痛点引入：OpenClaw火了又被封，普通人看得云里雾里\n2. 深度剖析：Agent工具的安全红线到底在哪\n3. 行动建议：普通人如何安全使用AI Agent'
-      },
-      {
-        topic: 'Kimi vs Claude',
-        angle: 'Claude Code换成Kimi K2.5后回不去，说明大模型体验只差一点就是质变',
-        outline: '1. 痛点引入：很多人觉得大模型都差不多\n2. 深度剖析：Kimi K2.5到底赢在了哪里\n3. 行动建议：如何选择适合自己的AI编程助手'
-      },
-      {
-        topic: '机器人端到端',
-        angle: '机器人全程自主收拾客厅不是炫技，是家用机器人商业化的信号',
-        outline: '1. 痛点引入：觉得机器人离家用还很远\n2. 深度剖析：390亿美元估值背后的商业逻辑\n3. 行动建议：普通人如何关注这波机会'
-      }
-    ],
-    '技术小白搞钱流': [
-      {
-        topic: 'OpenClaw 变现',
-        angle: '别光围观OpenClaw争议，提示词模板、场景定制才是普通人的赚钱机会',
-        outline: '1. 痛点引入：大家都在吃瓜，但没人说怎么用它赚钱\n2. 深度剖析：3个普通人能用Agent变现的小赛道\n3. 行动建议：本周就能开始的实操步骤'
-      },
-      {
-        topic: '飞书+AI',
-        angle: '企业微信接入OpenClaw，职场人效率提升的同时也藏着副业机会',
-        outline: '1. 痛点引入：觉得企业工具和自己没关系\n2. 深度剖析：企业AI工具带来的3个副业方向\n3. 行动建议：从今天开始可以做的3件事'
-      },
-      {
-        topic: '一分钟安装',
-        angle: '电脑装AI像下载APP一样简单，门槛降低意味着普通人的机会来了',
-        outline: '1. 痛点引入：之前觉得AI安装太复杂\n2. 深度剖析：门槛降低后什么人能赚到钱\n3. 行动建议：2026年最值得投入的3个方向'
-      }
-    ],
-    'default': [
-      {
-        topic: 'Agent 时代',
-        angle: '桌面Agent不是玩具，是下一波生产力革命的起点',
-        outline: '1. 痛点引入：很多人觉得Agent是概念\n2. 深度剖析：OpenClaw等工具真正改变了什么\n3. 行动建议：普通人如何抓住这波机会'
-      },
-      {
-        topic: '大模型选择',
-        angle: '不是大模型越贵越好，适合自己场景的才是最好的',
-        outline: '1. 痛点引入：不知道选哪个大模型\n2. 深度剖析：如何判断大模型是否适合自己\n3. 行动建议：2026年最值得关注的3个大模型'
-      },
-      {
-        topic: '机器人商业化',
-        angle: '英伟达持续加注机器人，说明家用机器人的商业化拐点快到了',
-        outline: '1. 痛点引入：觉得机器人还很遥远\n2. 深度剖析：机器人端到端技术突破的意义\n3. 行动建议：个人如何关注这波趋势'
-      }
-    ]
-  };
+  const isFuye = persona.includes('副业') || persona.includes('搞钱') || persona.includes('创业');
+  const isAI = persona.includes('AI') || persona.includes('技术') || persona.includes('思考');
 
-  if (persona.includes('AI观点')) {
-    return inspirations['AI观点分享博主'];
-  } else if (persona.includes('搞钱')) {
-    return inspirations['技术小白搞钱流'];
-  } else {
-    return inspirations['default'];
+  if (isFuye) {
+    return [
+      {
+        topic: '月入三千的副业误区',
+        angle: '99%的人副业失败不是因为不努力，是选错了赛道——这三类副业看起来火但其实最难变现',
+        outline: '大家都在卷的副业为什么赚不到钱\n真正能长期变现的副业有什么特征\n2026年适合普通人的3个低风险副业方向',
+      },
+      {
+        topic: '我副业月入过万后戒掉了什么',
+        angle: '反直觉：做成副业之后，我反而减少了"努力"——真正的杠杆不是时间，是系统',
+        outline: '副业从月入几百到过万，我做了什么\n让副业自动运转的3个关键动作\n现在每周只花5小时，收入反而涨了',
+      },
+      {
+        topic: '副业必备的AI工具清单',
+        angle: '普通人做副业最大的成本是时间，这5个AI工具能让你的效率提升10倍，直接少踩半年坑',
+        outline: '没有这些工具前我是怎么浪费时间的\n5个真正改变效率的AI工具实测\n组合用法：一个人顶一个小团队',
+      },
+    ];
   }
+
+  if (isAI) {
+    return [
+      {
+        topic: 'AI替代的不是工作，是思维',
+        angle: '反直觉：最先被AI淘汰的不是体力劳动者，而是"只会执行、不会思考"的知识工作者',
+        outline: '大家都在担心被AI替代，但方向搞错了\nAI真正威胁的是哪类人\n如何用AI放大自己的思维而不是被替代',
+      },
+      {
+        topic: '我用AI工作一年后的反思',
+        angle: '用了一年AI工具，我发现最大的坑不是工具不够好，而是大多数人根本不知道怎么提问',
+        outline: '一年前我以为AI是万能的\n现在我认为AI最大的局限在哪里\n真正高效用AI的3个底层思维',
+      },
+      {
+        topic: '2026年哪些AI工具值得付费',
+        angle: '干货向：用烂了几十个AI工具后，这3个我愿意一直续费——不是最贵的，但是ROI最高的',
+        outline: '免费AI工具的天花板在哪里\n我付费的3个AI工具及真实使用场景\n如何判断一个AI工具值不值得付费',
+      },
+    ];
+  }
+
+  return [
+    {
+      topic: '越努力越穷的真相',
+      angle: '反直觉：很多人之所以努力却没结果，是因为在用战术勤奋掩盖战略懒惰',
+      outline: '为什么努力没有换来想要的结果\n战术勤奋和战略懒惰的区别\n真正改变人生轨迹的3个思维转变',
+    },
+    {
+      topic: '普通人的财务自由路径',
+      angle: '不是鸡汤：财务自由不需要天赋，需要的是正确的顺序——大多数人把顺序搞反了',
+      outline: '财务自由被包装成了成功学\n真正可执行的财务自由路径长什么样\n从现在开始的3个最优先动作',
+    },
+    {
+      topic: '我学到的最值钱的一件事',
+      angle: '30岁之前最值得投资的不是技能，而是眼界——见过好的，才知道自己要什么',
+      outline: '我花了多少钱和时间才搞明白这件事\n眼界是怎么改变一个人的决策的\n如何用最低成本快速扩展认知边界',
+    },
+  ];
 }

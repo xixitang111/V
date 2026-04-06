@@ -3,7 +3,7 @@ import { addToQueue } from '../../../lib/queue';
 
 export async function POST(request: Request) {
   try {
-    const { title, content } = await request.json();
+    const { title, content, postDescription, persona, topic, accountId } = await request.json();
 
     if (!title || !content) {
       return NextResponse.json(
@@ -12,16 +12,24 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('📥 将内容加入待发布队列...');
+    console.log('📥 将内容加入待审核队列...');
     console.log('📄 标题:', title);
-    console.log('📄 内容长度:', content.length, '字符');
+    console.log('👤 人设:', persona || '未指定', '| 选题:', topic || '未指定');
+    console.log('🔗 账号ID:', accountId || '未指定');
 
-    const queueItem = addToQueue(title, content);
+    const queueItem = await addToQueue({
+      title,
+      content,
+      postDescription: postDescription || '',
+      persona: persona || '',
+      topic: topic || '',
+      accountId: accountId || undefined,
+    });
 
     return NextResponse.json({
       success: true,
-      message: '已加入待发布队列！',
-      queueItem
+      message: '已加入待审核队列，请前往数据中心确认',
+      queueItem,
     });
   } catch (error) {
     console.error('发布 API 错误:', error);

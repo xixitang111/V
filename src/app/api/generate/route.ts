@@ -1,129 +1,282 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+
+type KeyPoint = {
+  point: string;
+  details: string;
+  source: string;
+};
+
+type ResearchData = {
+  keyPoints: KeyPoint[];
+  angles: string[];
+};
 
 export async function POST(request: NextRequest) {
-  try {
-    const { persona, outline, model, history = '' } = await request.json();
+  const {
+    persona,
+    personaPrompt = '',
+    outline,
+    tips = [],
+    selectedTopic = '',
+    selectedAngle = '',
+    sellingPoint = '',
+    targetAudience = '',
+    model,
+    researchData,
+    history = '',
+  }: {
+    persona: string;
+    personaPrompt?: string;
+    outline: string;
+    tips?: string[];
+    selectedTopic?: string;
+    selectedAngle?: string;
+    sellingPoint?: string;
+    targetAudience?: string;
+    model: string;
+    researchData?: ResearchData;
+    history?: string;
+  } = await request.json();
 
-    if (!persona || !outline || !model) {
-      return NextResponse.json(
-        { error: '缺少必填字段：persona, outline, model' },
-        { status: 400 }
-      );
-    }
-
-    const apiKey = process.env.DOUBAO_API_KEY;
-    const baseUrl = process.env.DOUBAO_BASE_URL;
-    
-    if (!apiKey || !baseUrl) {
-      return NextResponse.json(
-        { error: '请在 .env.local 中配置 DOUBAO_API_KEY 和 DOUBAO_BASE_URL' },
-        { status: 500 }
-      );
-    }
-
-    const systemPrompt = `你现在是我的专属自媒体爆款写手与商业分析智囊。你的核心任务是：以我提供的【最新创作 Idea：${outline}】为导向，参考当前的【人设特征：${persona}】以及【历史过往内容参考：${history}】（如无则忽略），为我生成一篇极具深度的、可以直接发布的小红书长文。
-
-### 必须严格遵守的四大创作军规：
-1. **人设高度统一**：严格贴合传入的人设身份、语言风格和专属标签。保持账号极强的辨识度，杜绝任何与人设相悖的表述。
-2. **风格延续但绝对避雷同**：主动创新！观点角度、案例选取必须与历史内容不同，不做重复创作，给老粉新鲜感。
-3. **深度下钻与情绪嘴替**：
-   - 开头必须抓人：用痛点、悬念或反直觉/反常识的结论打破读者防御。
-   - 内容必须硬核：多用具体、甚至有些酷炫的行业案例和降维分析，提供极强的 Insights 和 Takeaways。
-   - 情绪必须到位：做目标受众的"嘴替"，激发评论区的分享欲和讨论欲。
-   - 态度必须去油：**绝对不要有"爹味"和高高在上的说教感**，保持平视沟通。
-4. **小红书原生语感与排版**：
-   - 减少双引号的死板引用，多用长短句交错，营造极强的"活人真实感"。
-   - 结构必须清晰分段，合理使用且不滥用 Emoji 作为视觉停顿提示。
-
-### 输出格式约束：
-你必须返回一个合法的 JSON 对象，不要包含任何额外的 Markdown 标记（如 \`\`\`json），必须包含以下两个字段：
-- \`article_content\`: 长文正文内容（包含内部的小标题、带有合理换行符 \\n 和 Emoji 的正文，用于直接复制进小红书长文编辑器排版）。
-- \`post_description\`: 小红书笔记外发文案（包含：1. 极具吸引力的主标题；2. 一段"说人话"的精简摘要/导语；3. 紧跟在底部的几个精准热点话题 #Tags）。`;
-    
-    console.log('调用豆包 API...');
-    console.log('模型:', model);
-    console.log('人设:', persona);
-    console.log('创作思路:', outline);
-    
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: outline }
-        ],
-        temperature: 0.8,
-        max_tokens: 3000
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API 错误:', response.status, errorText);
-      throw new Error(`API 请求失败: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    
-    if (!content) {
-      throw new Error('API 返回内容为空');
-    }
-
-    console.log('大模型返回内容:', content);
-
-    // 增强的 JSON 解析逻辑
-    let jsonContent = content.trim();
-    
-    // 清理可能的 Markdown 代码块标记
-    jsonContent = jsonContent.replace(/^```json\s*/, '').replace(/```$/, '');
-    jsonContent = jsonContent.replace(/^```\s*/, '').replace(/```$/, '');
-    
-    // 尝试找到第一个 { 和最后一个 } 之间的内容
-    const firstBraceIndex = jsonContent.indexOf('{');
-    const lastBraceIndex = jsonContent.lastIndexOf('}');
-    
-    if (firstBraceIndex !== -1 && lastBraceIndex !== -1 && lastBraceIndex > firstBraceIndex) {
-      jsonContent = jsonContent.substring(firstBraceIndex, lastBraceIndex + 1);
-    }
-
-    try {
-      const generatedData = JSON.parse(jsonContent);
-      
-      // 验证必需的字段是否存在
-      if (!generatedData.article_content) {
-        console.warn('返回数据缺少 article_content 字段');
-        generatedData.article_content = content;
-      }
-      
-      if (!generatedData.post_description) {
-        console.warn('返回数据缺少 post_description 字段');
-        generatedData.post_description = '请根据长文内容手动编辑外发文案';
-      }
-      
-      console.log('生成成功！');
-      return NextResponse.json(generatedData);
-    } catch (parseError) {
-      console.error('解析JSON失败:', parseError);
-      console.error('尝试解析的内容:', jsonContent);
-      
-      // 如果解析失败，返回原始内容作为 article_content
-      return NextResponse.json({
-        article_content: content,
-        post_description: '请根据长文内容手动编辑外发文案'
-      });
-    }
-    
-  } catch (error) {
-    console.error('生成内容失败:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : '生成内容失败' },
-      { status: 500 }
+  if (!persona || !outline || !model) {
+    return new Response(
+      JSON.stringify({ error: '缺少必填字段：persona, outline, model' }),
+      { status: 400, headers: { 'Content-Type': 'application/json' } }
     );
   }
+
+  const apiKey = process.env.DOUBAO_API_KEY;
+  const baseUrl = process.env.DOUBAO_BASE_URL;
+
+  if (!apiKey || !baseUrl) {
+    return new Response(
+      JSON.stringify({ error: '请在 .env.local 中配置 DOUBAO_API_KEY 和 DOUBAO_BASE_URL' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  const personaContext = personaPrompt?.trim()
+    ? personaPrompt.trim()
+    : `你是一位名为「${persona}」的自媒体创作者。`;
+
+  const hasResearch = researchData?.keyPoints && researchData.keyPoints.length > 0;
+  const researchBlock = hasResearch
+    ? researchData!.keyPoints
+        .map((kp, i) =>
+          `[${i + 1}] ${kp.point}\n    数据：${kp.details}\n    来源：${kp.source}`
+        )
+        .join('\n\n')
+    : '';
+
+  const historyBlock = history?.trim()
+    ? `\n\n【历史内容参考（避免重复）】\n${history.trim()}`
+    : '';
+
+  const tipsBlock = tips.length > 0
+    ? `\n\n【本次专项写作提示】\n${tips.map((t, i) => `${i + 1}. ${t}`).join('\n')}`
+    : '';
+
+  const articleSystemPrompt = `你现在是我的专属自媒体爆款写手。
+
+【人设档案】
+${personaContext}
+${historyBlock}
+
+【本次创作背景】
+- 选题：${selectedTopic || '见大纲'}
+- 核心卖点：${sellingPoint || '见大纲'}
+- 目标受众：${targetAudience || '见大纲'}
+- 写作切入角度：${selectedAngle || '见大纲'}
+
+【本次创作大纲】
+${outline}
+
+${hasResearch
+  ? `【调研获得的真实数据与案例】（正文中必须自然融入这些素材）
+${researchBlock}`
+  : ''
+}
+${tipsBlock}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+四大创作军规（必须严格遵守）：
+
+1. 【人设高度统一】严格贴合「人设档案」的身份、语气和价值主张，杜绝与人设相悖的表述。
+
+2. 【数据落地，拒绝空谈】${hasResearch
+     ? '每一个论点必须落到具体数据或案例上，让读者感受到信息密度。'
+     : '多用具体案例和数据支撑论点，避免空洞的鸡汤式表达。'
+   }
+
+3. 【精准击中目标受众】开头直击「${targetAudience || '目标受众'}」最在意的痛点或反直觉认知，破防开篇；内容硬核，给读者真正有用的 Insights；情绪到位，做目标受众的嘴替；态度平视，用「我」的真实经历代入。
+
+4. 【小红书原生语感与排版】长短句交错，合理使用 Emoji（每段1-2个），结尾有自然的行动号召。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【输出要求】
+- 字数控制在 800-1500 字之间
+- 直接输出长文正文内容，包含小标题、换行和 Emoji
+- 不要输出 JSON，不要加任何说明，直接输出正文`;
+
+  const postSystemPrompt = `你是一位专精小红书平台运营的文案专家。
+
+【创作人设】
+${personaContext}
+
+【本文受众与卖点】
+- 目标受众：${targetAudience || '见正文'}
+- 核心卖点：${sellingPoint || '见正文'}
+
+你的任务是为下方已写好的长文，创作一套完整的小红书外发文案。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【输出格式】严格按以下 JSON 结构返回，不包含任何 Markdown 标记：
+{
+  "title": "主标题（≤20字，必须包含以下至少一个元素：具体数字、年份「2025/2026」、第一人称「我」、疑问或反转感）",
+  "summary": "摘要（2-3句口语化内容预告，≤80字）",
+  "tags": "话题标签（6-10个#话题，全部写在一行用空格分隔）"
+}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  // ── SSE 流式响应 ─────────────────────────────────────────────────────────────
+  const encoder = new TextEncoder();
+  const stream = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = stream.writable.getWriter();
+
+  const sendEvent = async (data: object) => {
+    await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+  };
+
+  (async () => {
+    try {
+      console.log('🚀 流式生成正文，模型:', model);
+
+      // ── 第一步：流式生成正文 ──────────────────────────────────────────────
+      const articleRes = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: articleSystemPrompt },
+            { role: 'user', content: '请根据上方大纲、调研数据和写作提示，生成完整的小红书长文正文。' },
+          ],
+          temperature: 0.85,
+          max_tokens: 2500,
+          stream: true,
+        }),
+      });
+
+      if (!articleRes.ok) {
+        const errorText = await articleRes.text();
+        await sendEvent({ type: 'error', message: `正文生成失败: ${articleRes.status} - ${errorText}` });
+        await writer.close();
+        return;
+      }
+
+      const reader = articleRes.body!.getReader();
+      const decoder = new TextDecoder();
+      let articleContent = '';
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (raw === '[DONE]') break;
+          try {
+            const parsed = JSON.parse(raw);
+            const delta = parsed.choices?.[0]?.delta?.content ?? '';
+            if (delta) {
+              articleContent += delta;
+              await sendEvent({ type: 'article_chunk', chunk: delta });
+            }
+          } catch {}
+        }
+      }
+
+      if (!articleContent) {
+        await sendEvent({ type: 'error', message: '正文生成返回内容为空，请重试' });
+        await writer.close();
+        return;
+      }
+
+      console.log('✅ 正文流式输出完成，字数约:', articleContent.length);
+
+      // ── 第二步：生成外发文案（非流式，通常很快）────────────────────────────
+      await sendEvent({ type: 'status', message: '正在生成外发文案...' });
+
+      const postRes = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: postSystemPrompt },
+            {
+              role: 'user',
+              content: `以下是已生成的长文正文：\n\n${articleContent}\n\n请为上述文章生成小红书外发文案，严格按 JSON 格式返回。`,
+            },
+          ],
+          temperature: 0.75,
+          max_tokens: 400,
+        }),
+      });
+
+      let postDescription = '请根据长文内容手动编辑外发文案';
+      if (postRes.ok) {
+        const postData = await postRes.json();
+        const postRaw = postData.choices?.[0]?.message?.content || '';
+        try {
+          let jsonStr = postRaw.trim()
+            .replace(/^```json\s*/m, '').replace(/```\s*$/m, '')
+            .replace(/^```\s*/m, '');
+          const firstBrace = jsonStr.indexOf('{');
+          const lastBrace = jsonStr.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+          }
+          const postObj = JSON.parse(jsonStr);
+          postDescription = [
+            postObj.title || '',
+            '',
+            postObj.summary || '',
+            '',
+            postObj.tags || '',
+          ].filter((line, i, arr) => !(line === '' && arr[i - 1] === '')).join('\n');
+        } catch {
+          postDescription = postRaw || postDescription;
+        }
+      }
+
+      await sendEvent({ type: 'post_description', content: postDescription });
+      await sendEvent({ type: 'done' });
+      console.log('🎉 全部生成完成！');
+    } catch (error) {
+      console.error('生成内容失败:', error);
+      await sendEvent({ type: 'error', message: error instanceof Error ? error.message : '生成内容失败' });
+    } finally {
+      await writer.close();
+    }
+  })();
+
+  return new Response(stream.readable, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  });
 }
