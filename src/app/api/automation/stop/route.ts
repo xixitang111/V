@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { taskStatus, addLog } from '../start/route';
+import { taskStatus, addLog } from '../store';
 
 export async function POST(request: NextRequest) {
   try {

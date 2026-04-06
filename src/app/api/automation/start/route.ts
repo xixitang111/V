@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getNextApprovedItem, updateQueueItem } from '../../../../lib/queue';
 import { storage } from '../../../../lib/storage';
+import { taskStatus, taskLogs, addLog } from '../store';
 import path from 'path';
 import fs from 'fs';
-
-// ── 内存中的任务状态（进程内单例）──────────────────────────────────────────
-let taskStatus: Record<string, { isRunning: boolean; config: Record<string, unknown> }> = {};
-let taskLogs: Record<string, Array<{ timestamp: string; type: string; message: string }>> = {};
 
 // ── POST /api/automation/start ─────────────────────────────────────────────
 export async function POST(request: NextRequest) {
@@ -36,16 +33,6 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// ── 日志工具 ────────────────────────────────────────────────────────────────
-export function addLog(taskId: string, type: string, message: string) {
-  const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-  if (!taskLogs[taskId]) taskLogs[taskId] = [];
-  taskLogs[taskId].push({ timestamp, type, message });
-  // 最多保留 200 条
-  if (taskLogs[taskId].length > 200) taskLogs[taskId] = taskLogs[taskId].slice(-200);
-  console.log(`[${taskId}][${type}] ${message}`);
 }
 
 // ── 任务分发 ────────────────────────────────────────────────────────────────
@@ -408,4 +395,3 @@ async function simulateCompetitorIntercept(taskId: string, config: Record<string
 // ── 工具函数 ────────────────────────────────────────────────────────────────
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export { taskStatus, taskLogs };
