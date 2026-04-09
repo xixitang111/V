@@ -132,8 +132,10 @@ export default function AICreationPage() {
   const [editedOutline, setEditedOutline] = useState<string[]>([]);
   const [articleContent, setArticleContent] = useState('');
   const [postDescription, setPostDescription] = useState('');
-  const [imagePrompt, setImagePrompt] = useState('');
-  const [commentHook, setCommentHook] = useState('');
+  const [postTitles, setPostTitles] = useState<string[]>([]);
+  const [postSummary, setPostSummary] = useState('');
+  const [postTags, setPostTags] = useState('');
+  const [selectedTitleIdx, setSelectedTitleIdx] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isResearching, setIsResearching] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
@@ -288,8 +290,10 @@ export default function AICreationPage() {
     setIsGenerating(true);
     setArticleContent('');
     setPostDescription('');
-    setImagePrompt('');
-    setCommentHook('');
+    setPostTitles([]);
+    setPostSummary('');
+    setPostTags('');
+    setSelectedTitleIdx(0);
 
     try {
       const { name: personaName, prompt: personaPrompt } = getCurrentPersona();
@@ -336,12 +340,14 @@ export default function AICreationPage() {
             const event = JSON.parse(raw);
             if (event.type === 'article_chunk') {
               setArticleContent(prev => prev + event.chunk);
+            } else if (event.type === 'post_titles') {
+              setPostTitles(event.titles || []);
+            } else if (event.type === 'post_summary') {
+              setPostSummary(event.content);
+            } else if (event.type === 'post_tags') {
+              setPostTags(event.content);
             } else if (event.type === 'post_description') {
               setPostDescription(event.content);
-            } else if (event.type === 'image_prompt') {
-              setImagePrompt(event.content);
-            } else if (event.type === 'comment_hook') {
-              setCommentHook(event.content);
             } else if (event.type === 'error') {
               throw new Error(event.message);
             }
@@ -444,7 +450,7 @@ export default function AICreationPage() {
                   </div>
                   <h2 className="text-xl font-bold text-white mb-1">一句话灵感 · 30秒成稿 · 可直接发布</h2>
                   <p className="text-slate-300 text-sm leading-relaxed">
-                    怎么想怎么说，不用写 Prompt → AI 深度调研 + 差异化叙事框架 → 结构化大纲 → 一键生成 <span className="text-indigo-300 font-medium">1200+字长文 + 外发文案 + 配图建议 + 评论话术</span>
+                    怎么想怎么说，不用写 Prompt → AI 深度调研 + 差异化叙事框架 → 结构化大纲 → 一键生成 <span className="text-indigo-300 font-medium">1000+字长文 · 3个备选标题 · 人话版摘要 · 10个话题标签</span>
                   </p>
                 </div>
                 {/* 创作身份（compact inline） */}
@@ -903,22 +909,12 @@ export default function AICreationPage() {
                   <div className="flex flex-wrap items-center justify-center gap-3 mt-3">
                     <div className="flex items-center gap-2 text-xs text-slate-600">
                       <span className="w-5 h-5 bg-blue-500/20 text-blue-500 rounded text-[10px] font-bold flex items-center justify-center">A</span>
-                      长文正文（1200+字）
+                      长文正文（1000+字）
                     </div>
                     <span className="text-slate-700">+</span>
                     <div className="flex items-center gap-2 text-xs text-slate-600">
                       <span className="w-5 h-5 bg-purple-500/20 text-purple-500 rounded text-[10px] font-bold flex items-center justify-center">B</span>
-                      外发文案（标题 + 摘要 + Tags）
-                    </div>
-                    <span className="text-slate-700">+</span>
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                      <span className="w-5 h-5 bg-amber-500/20 text-amber-500 rounded text-[10px] font-bold flex items-center justify-center">C</span>
-                      配图建议
-                    </div>
-                    <span className="text-slate-700">+</span>
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                      <span className="w-5 h-5 bg-green-500/20 text-green-500 rounded text-[10px] font-bold flex items-center justify-center">D</span>
-                      评论区引导话术
+                      3个备选标题 + 人话版摘要 + 10个Tags
                     </div>
                   </div>
                 </div>
@@ -966,78 +962,73 @@ export default function AICreationPage() {
                     />
                   </div>
 
-                  {/* Panel B: 外发文案 */}
+                  {/* Panel B: 发布外围件（3备选标题 + 摘要 + Tags） */}
                   <div className="mb-6 rounded-xl border border-purple-500/25 bg-slate-900/60 overflow-hidden">
                     <div className="flex items-center justify-between px-5 py-3 bg-purple-500/[0.08] border-b border-purple-500/20">
                       <div className="flex items-center gap-2">
                         <span className="w-6 h-6 bg-purple-500/25 text-purple-400 rounded text-xs font-bold flex items-center justify-center flex-shrink-0">B</span>
                         <div>
-                          <p className="text-sm font-semibold text-slate-100">外发文案</p>
-                          <p className="text-xs text-slate-500">外发标题 + 人话版摘要 + 话题标签 · 影响小红书搜索曝光与用户点击</p>
+                          <p className="text-sm font-semibold text-slate-100">发布外围件</p>
+                          <p className="text-xs text-slate-500">3个备选标题 · 人话版摘要 · 10个话题标签 · 直接影响搜索曝光与点击率</p>
                         </div>
                       </div>
-                      {postDescription && (
+                      {postTitles.length > 0 && (
                         <span className="text-[10px] text-green-400 bg-green-500/15 border border-green-500/25 px-2 py-0.5 rounded-full flex items-center gap-1">
                           <CheckCircle className="w-2.5 h-2.5" />已生成
                         </span>
                       )}
                     </div>
-                    <textarea
-                      value={postDescription}
-                      onChange={(e) => setPostDescription(e.target.value)}
-                      rows={8}
-                      placeholder={isGenerating ? '正在生成外发文案...' : '点击上方按钮生成外发文案（标题 + 摘要 + #话题标签）...'}
-                      className="w-full bg-transparent px-5 py-4 text-slate-100 placeholder-slate-600 focus:outline-none resize-none font-mono text-sm leading-relaxed"
-                    />
-                  </div>
-
-                  {/* Panel C: 配图建议 */}
-                  <div className="mb-4 rounded-xl border border-amber-500/25 bg-slate-900/60 overflow-hidden">
-                    <div className="flex items-center justify-between px-5 py-3 bg-amber-500/[0.08] border-b border-amber-500/20">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 bg-amber-500/25 text-amber-400 rounded text-xs font-bold flex items-center justify-center flex-shrink-0">C</span>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-100">配图建议</p>
-                          <p className="text-xs text-slate-500">封面图风格参考，拍摄或生成图时可直接参照</p>
-                        </div>
+                    <div className="px-5 py-4 space-y-4">
+                      {/* 3个备选标题 */}
+                      <div>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-2">🏷️ 备选标题 × 3（点击选用）</p>
+                        {postTitles.length > 0 ? (
+                          <div className="space-y-2">
+                            {postTitles.map((t, i) => (
+                              <button
+                                key={i}
+                                onClick={() => setSelectedTitleIdx(i)}
+                                className={`w-full text-left px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                                  selectedTitleIdx === i
+                                    ? 'bg-purple-500/20 border-purple-500/60 text-purple-200'
+                                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-purple-500/40'
+                                }`}
+                              >
+                                <span className="text-[10px] text-slate-500 mr-2">#{i+1}</span>{t}
+                                {selectedTitleIdx === i && <span className="ml-2 text-[10px] text-purple-400">✓ 已选</span>}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-slate-600 text-sm italic">{isGenerating ? '正在生成备选标题...' : '生成内容后自动出现'}</p>
+                        )}
                       </div>
-                      {imagePrompt && (
-                        <span className="text-[10px] text-green-400 bg-green-500/15 border border-green-500/25 px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <CheckCircle className="w-2.5 h-2.5" />已生成
-                        </span>
-                      )}
-                    </div>
-                    <div className="px-5 py-4">
-                      {imagePrompt ? (
-                        <p className="text-sm text-slate-200 leading-relaxed">{imagePrompt}</p>
-                      ) : (
-                        <p className="text-slate-600 text-sm italic">{isGenerating ? '正在生成配图建议...' : '生成内容后自动出现'}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Panel D: 评论区引导话术 */}
-                  <div className="mb-6 rounded-xl border border-green-500/25 bg-slate-900/60 overflow-hidden">
-                    <div className="flex items-center justify-between px-5 py-3 bg-green-500/[0.08] border-b border-green-500/20">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 bg-green-500/25 text-green-400 rounded text-xs font-bold flex items-center justify-center flex-shrink-0">D</span>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-100">评论区引导话术</p>
-                          <p className="text-xs text-slate-500">发布后置顶评论，引导读者互动，提升内容权重</p>
-                        </div>
+                      {/* 人话版摘要 */}
+                      <div>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-2">💬 人话版摘要（可直接用于私信/朋友圈预告）</p>
+                        {postSummary ? (
+                          <p className="text-sm text-slate-200 leading-relaxed bg-slate-800 rounded-lg px-4 py-3 border border-slate-700">{postSummary}</p>
+                        ) : (
+                          <p className="text-slate-600 text-sm italic">{isGenerating ? '正在生成摘要...' : '生成内容后自动出现'}</p>
+                        )}
                       </div>
-                      {commentHook && (
-                        <span className="text-[10px] text-green-400 bg-green-500/15 border border-green-500/25 px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <CheckCircle className="w-2.5 h-2.5" />已生成
-                        </span>
-                      )}
-                    </div>
-                    <div className="px-5 py-4">
-                      {commentHook ? (
-                        <p className="text-sm text-slate-200 leading-relaxed italic">&ldquo;{commentHook}&rdquo;</p>
-                      ) : (
-                        <p className="text-slate-600 text-sm italic">{isGenerating ? '正在生成评论引导话术...' : '生成内容后自动出现'}</p>
-                      )}
+                      {/* Tags */}
+                      <div>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-2"># 话题标签（10个，后5个为蓝海词）</p>
+                        {postTags ? (
+                          <div className="flex flex-wrap gap-2">
+                            {postTags.split(/\s+/).filter(Boolean).map((tag, i) => (
+                              <span key={i} className={`text-xs px-2.5 py-1 rounded-full border ${
+                                i >= 5
+                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                  : 'bg-slate-700 border-slate-600 text-slate-300'
+                              }`}>{tag}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-slate-600 text-sm italic">{isGenerating ? '正在生成话题标签...' : '生成内容后自动出现'}</p>
+                        )}
+                      </div>
                     </div>
                   </div>
 

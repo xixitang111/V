@@ -127,16 +127,14 @@ ${personaContext}
 - 目标受众：${targetAudience || '见正文'}
 - 核心卖点：${sellingPoint || '见正文'}
 
-你的任务是为下方已写好的长文，创作一套完整的「可直接发布的小红书内容资产包」。
+你的任务是为下方已写好的长文，创作一套完整的「可直接发布的小红书内容外围件」。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【输出格式】严格按以下 JSON 结构返回，不包含任何 Markdown 标记：
 {
-  "title": "主标题（≤20字，必须包含以下至少一个元素：具体数字、年份「2026」、第一人称「我」、疑问或反转感）",
-  "summary": "人话版摘要（2-3句口语化内容预告，≤80字，像在跟朋友说话）",
-  "tags": "话题标签（6-10个#话题，全部写在一行用空格分隔，包含大词和长尾词）",
-  "image_prompt": "配图建议（1-2句，描述最适合这篇文章的封面图风格和内容，例如：平铺俯拍·白底·手写笔记本+咖啡+数字设备，文字少留白多，风格温暖职场感）",
-  "comment_hook": "评论区引导话术（1-2句，自然引导读者互动，例如：你现在做副业了吗？在评论区告诉我，我看到都会回复！）"
+  "titles": ["钩子式标题1（≤20字，含数字或反转感）", "钩子式标题2（≤20字，第一人称视角）", "钩子式标题3（≤20字，疑问或悬念感）"],
+  "summary": "人话版摘要（恰好2句话，自带emoji，口语化，可直接用于私信回复/朋友圈预告，≤70字）",
+  "tags": "话题标签（恰好10个#话题，全部写在一行用空格分隔，前5个为大词，后5个为蓝海长尾词）"
 }
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -236,9 +234,9 @@ ${personaContext}
         }),
       });
 
-      let postDescription = '请根据长文内容手动编辑外发文案';
-      let imagePrompt = '';
-      let commentHook = '';
+      let postTitles: string[] = [];
+      let postSummary = '';
+      let postTags = '';
       if (postRes.ok) {
         const postData = await postRes.json();
         const postRaw = postData.choices?.[0]?.message?.content || '';
@@ -252,23 +250,22 @@ ${personaContext}
             jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
           }
           const postObj = JSON.parse(jsonStr);
-          postDescription = [
-            postObj.title || '',
-            '',
-            postObj.summary || '',
-            '',
-            postObj.tags || '',
-          ].filter((line, i, arr) => !(line === '' && arr[i - 1] === '')).join('\n');
-          imagePrompt = postObj.image_prompt || '';
-          commentHook = postObj.comment_hook || '';
+          postTitles = Array.isArray(postObj.titles) ? postObj.titles : (postObj.title ? [postObj.title] : []);
+          postSummary = postObj.summary || '';
+          postTags = postObj.tags || '';
         } catch {
-          postDescription = postRaw || postDescription;
+          // fallback: send raw
+          postSummary = postRaw;
         }
       }
 
+      // send structured post data
+      await sendEvent({ type: 'post_titles', titles: postTitles });
+      await sendEvent({ type: 'post_summary', content: postSummary });
+      await sendEvent({ type: 'post_tags', content: postTags });
+      // legacy field for backward compat
+      const postDescription = [postTitles[0] || '', '', postSummary, '', postTags].filter(Boolean).join('\n');
       await sendEvent({ type: 'post_description', content: postDescription });
-      if (imagePrompt) await sendEvent({ type: 'image_prompt', content: imagePrompt });
-      if (commentHook) await sendEvent({ type: 'comment_hook', content: commentHook });
       await sendEvent({ type: 'done' });
       console.log('🎉 全部生成完成！');
     } catch (error) {
