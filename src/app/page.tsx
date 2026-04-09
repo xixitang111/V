@@ -132,6 +132,8 @@ export default function AICreationPage() {
   const [editedOutline, setEditedOutline] = useState<string[]>([]);
   const [articleContent, setArticleContent] = useState('');
   const [postDescription, setPostDescription] = useState('');
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [commentHook, setCommentHook] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isResearching, setIsResearching] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
@@ -286,6 +288,8 @@ export default function AICreationPage() {
     setIsGenerating(true);
     setArticleContent('');
     setPostDescription('');
+    setImagePrompt('');
+    setCommentHook('');
 
     try {
       const { name: personaName, prompt: personaPrompt } = getCurrentPersona();
@@ -334,6 +338,10 @@ export default function AICreationPage() {
               setArticleContent(prev => prev + event.chunk);
             } else if (event.type === 'post_description') {
               setPostDescription(event.content);
+            } else if (event.type === 'image_prompt') {
+              setImagePrompt(event.content);
+            } else if (event.type === 'comment_hook') {
+              setCommentHook(event.content);
             } else if (event.type === 'error') {
               throw new Error(event.message);
             }
@@ -434,9 +442,9 @@ export default function AICreationPage() {
                     <span className="px-2 py-0.5 bg-indigo-500/30 text-indigo-300 text-xs font-semibold rounded-full border border-indigo-500/40">核心功能</span>
                     <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs font-medium rounded-full border border-green-500/30">✓ 真实 AI 驱动</span>
                   </div>
-                  <h2 className="text-xl font-bold text-white mb-1">输入一个灵感，三步生成可发布笔记</h2>
+                  <h2 className="text-xl font-bold text-white mb-1">一句话灵感 · 30秒成稿 · 可直接发布</h2>
                   <p className="text-slate-300 text-sm leading-relaxed">
-                    描述你的想法（可以很模糊）→ AI 深度调研 + 生成差异化叙事角度 → 结构化大纲 → 一键生成长文 + 外发文案
+                    怎么想怎么说，不用写 Prompt → AI 深度调研 + 差异化叙事框架 → 结构化大纲 → 一键生成 <span className="text-indigo-300 font-medium">1200+字长文 + 外发文案 + 配图建议 + 评论话术</span>
                   </p>
                 </div>
                 {/* 创作身份（compact inline） */}
@@ -892,15 +900,25 @@ export default function AICreationPage() {
               {currentStep < 3 || !outlineResult ? (
                 <div className="mt-4 p-5 bg-slate-900/50 rounded-xl border border-slate-700/40 text-center">
                   <p className="text-slate-500 text-sm">完成上方三步后，此处将输出两部分内容</p>
-                  <div className="flex items-center justify-center gap-6 mt-3">
+                  <div className="flex flex-wrap items-center justify-center gap-3 mt-3">
                     <div className="flex items-center gap-2 text-xs text-slate-600">
                       <span className="w-5 h-5 bg-blue-500/20 text-blue-500 rounded text-[10px] font-bold flex items-center justify-center">A</span>
-                      长文内容（标题 + 正文）
+                      长文正文（1200+字）
                     </div>
                     <span className="text-slate-700">+</span>
                     <div className="flex items-center gap-2 text-xs text-slate-600">
                       <span className="w-5 h-5 bg-purple-500/20 text-purple-500 rounded text-[10px] font-bold flex items-center justify-center">B</span>
                       外发文案（标题 + 摘要 + Tags）
+                    </div>
+                    <span className="text-slate-700">+</span>
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <span className="w-5 h-5 bg-amber-500/20 text-amber-500 rounded text-[10px] font-bold flex items-center justify-center">C</span>
+                      配图建议
+                    </div>
+                    <span className="text-slate-700">+</span>
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <span className="w-5 h-5 bg-green-500/20 text-green-500 rounded text-[10px] font-bold flex items-center justify-center">D</span>
+                      评论区引导话术
                     </div>
                   </div>
                 </div>
@@ -971,6 +989,56 @@ export default function AICreationPage() {
                       placeholder={isGenerating ? '正在生成外发文案...' : '点击上方按钮生成外发文案（标题 + 摘要 + #话题标签）...'}
                       className="w-full bg-transparent px-5 py-4 text-slate-100 placeholder-slate-600 focus:outline-none resize-none font-mono text-sm leading-relaxed"
                     />
+                  </div>
+
+                  {/* Panel C: 配图建议 */}
+                  <div className="mb-4 rounded-xl border border-amber-500/25 bg-slate-900/60 overflow-hidden">
+                    <div className="flex items-center justify-between px-5 py-3 bg-amber-500/[0.08] border-b border-amber-500/20">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 bg-amber-500/25 text-amber-400 rounded text-xs font-bold flex items-center justify-center flex-shrink-0">C</span>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-100">配图建议</p>
+                          <p className="text-xs text-slate-500">封面图风格参考，拍摄或生成图时可直接参照</p>
+                        </div>
+                      </div>
+                      {imagePrompt && (
+                        <span className="text-[10px] text-green-400 bg-green-500/15 border border-green-500/25 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <CheckCircle className="w-2.5 h-2.5" />已生成
+                        </span>
+                      )}
+                    </div>
+                    <div className="px-5 py-4">
+                      {imagePrompt ? (
+                        <p className="text-sm text-slate-200 leading-relaxed">{imagePrompt}</p>
+                      ) : (
+                        <p className="text-slate-600 text-sm italic">{isGenerating ? '正在生成配图建议...' : '生成内容后自动出现'}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Panel D: 评论区引导话术 */}
+                  <div className="mb-6 rounded-xl border border-green-500/25 bg-slate-900/60 overflow-hidden">
+                    <div className="flex items-center justify-between px-5 py-3 bg-green-500/[0.08] border-b border-green-500/20">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 bg-green-500/25 text-green-400 rounded text-xs font-bold flex items-center justify-center flex-shrink-0">D</span>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-100">评论区引导话术</p>
+                          <p className="text-xs text-slate-500">发布后置顶评论，引导读者互动，提升内容权重</p>
+                        </div>
+                      </div>
+                      {commentHook && (
+                        <span className="text-[10px] text-green-400 bg-green-500/15 border border-green-500/25 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <CheckCircle className="w-2.5 h-2.5" />已生成
+                        </span>
+                      )}
+                    </div>
+                    <div className="px-5 py-4">
+                      {commentHook ? (
+                        <p className="text-sm text-slate-200 leading-relaxed italic">&ldquo;{commentHook}&rdquo;</p>
+                      ) : (
+                        <p className="text-slate-600 text-sm italic">{isGenerating ? '正在生成评论引导话术...' : '生成内容后自动出现'}</p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Action buttons */}

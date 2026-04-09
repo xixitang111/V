@@ -102,13 +102,16 @@ export default function HomePage() {
             <div className="relative z-10">
               <div className="inline-flex items-center gap-2 bg-amber-500/20 text-amber-300 px-4 py-1.5 rounded-full text-sm font-medium mb-5">
                 <Zap className="w-4 h-4" />
-                今日灵感工作台
+                个体商业化操作系统 · 小红书生态
               </div>
-              <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-white via-indigo-200 to-purple-200 bg-clip-text text-transparent">
+              <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-white via-indigo-200 to-purple-200 bg-clip-text text-transparent">
                 让每一个灵感都有标价
               </h1>
-              <p className="text-slate-400 text-lg max-w-xl">
-                选择你的人设，AI 为你精准推荐今日选题方向，一键跳转创作台开始输出。
+              <p className="text-indigo-300/80 text-base font-medium mb-3 tracking-wide">
+                一个人 · 一套 AI · 一家公司
+              </p>
+              <p className="text-slate-400 text-base max-w-xl">
+                你负责有灵感，剩下的脏活累活 AI 全包。选题 → 调研 → 创作 → 发布 → 变现，一个人跑完全套流程。
               </p>
             </div>
           </div>
@@ -222,13 +225,14 @@ export default function HomePage() {
           </div>
           {/* Features Grid */}
           <div className="mb-10">
-            <h2 className="text-xl font-bold mb-6 text-center text-slate-200">完整的商业化解决方案</h2>
+            <h2 className="text-xl font-bold mb-2 text-center text-slate-200">获客 · 转化 · 交付 · 三大痛点一次解决</h2>
+            <p className="text-center text-slate-500 text-sm mb-6">3小时/篇 → 30秒成稿 · 隔夜回复 → 7×24不下班 · 10万粉/¥0 → 一键挂变现链路</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {[
-                { icon: Wand2, title: 'AI 内容创作', desc: '基于人设的智能内容生成，让每一条笔记都有独特风格', color: 'from-purple-500 to-pink-500', href: '/' },
-                { icon: Bot, title: 'RPA 自动化', desc: '智能评论回复、同行截流、定时发布，24小时全自动运营', color: 'from-blue-500 to-cyan-500', href: '/automation' },
-                { icon: TrendingUp, title: '数据驱动', desc: '全链路数据监控，增长飞轮可视化，让每一个决策都有依据', color: 'from-emerald-500 to-green-500', href: '/dashboard' },
-                { icon: DollarSign, title: '商业变现', desc: '人设、内容、流量、转化、交付，完整的商业化闭环', color: 'from-amber-500 to-orange-500', href: '/delivery' },
+                { icon: Wand2, title: 'AI 创作台', desc: '一句话灵感，30秒输出1200字爆款长文 + 外发文案 + 配图建议 + 评论话术，全套可发布资产', color: 'from-purple-500 to-pink-500', href: '/' },
+                { icon: Bot, title: 'RPA 自动化', desc: '内容进入审核队列，通过后自动发布至小红书，7×24小时不下班，意图用户一个不漏', color: 'from-blue-500 to-cyan-500', href: '/automation' },
+                { icon: TrendingUp, title: '数据中心', desc: '粉丝增长、内容表现、变现数据全链路可视化，每个决策都有数据支撑', color: 'from-emerald-500 to-green-500', href: '/dashboard' },
+                { icon: DollarSign, title: '变现设置', desc: '预设知识付费/咨询/课程，流量直接变现，AI 动态生成私信引流话术', color: 'from-amber-500 to-orange-500', href: '/delivery' },
               ].map((f) => (
                 <Link
                   key={f.title}
